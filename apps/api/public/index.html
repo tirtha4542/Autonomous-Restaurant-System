@@ -34,6 +34,9 @@
       <button id="portal-btn-kitchen" class="mode-btn" onclick="switchPortal('kitchen')">
         <span class="icon">👨‍🍳</span> Kitchen (KDS)
       </button>
+      <button id="portal-btn-cashier" class="mode-btn" onclick="switchPortal('cashier')">
+        <span class="icon">💳</span> Cashier Portal
+      </button>
     </nav>
 
     <div class="header-right">
@@ -41,9 +44,6 @@
         <span class="pulse-dot"></span>
         <span id="connection-text">Connecting SSE...</span>
       </div>
-      <button id="btn-open-jarvis" class="jarvis-trigger" onclick="toggleJarvisModal()">
-        <span class="ai-sparkle">✨</span> <span id="jarvis-btn-label">Ask JARVIS</span>
-      </button>
     </div>
   </header>
 
@@ -406,7 +406,179 @@
       </div>
     </section>
 
+    <!-- ======================================================== -->
+    <!-- 5. CASHIER PORTAL (BILLING, PAYMENTS & SETTLEMENT)       -->
+    <!-- ======================================================== -->
+    <section id="view-cashier" class="portal-view">
+      <div class="portal-banner cashier-banner">
+        <div class="banner-content">
+          <span class="badge badge-accent">💳 Cashier Portal</span>
+          <h2>Billing, Checkout & Payment Settlement</h2>
+          <p class="subtext">Review table bills, collect payments (Cash, Card, Digital Wallet), and finalize dining sessions.</p>
+        </div>
+      </div>
+
+      <!-- Cashier Identity / Switch Bar -->
+      <div class="staff-role-bar card">
+        <div class="staff-info">
+          <div class="avatar-circle">💳</div>
+          <div>
+            <h4 id="cashier-name">Tom Becker (Cashier)</h4>
+            <span class="subtext">Station: Counter / Billing Desk • Branch #8</span>
+          </div>
+        </div>
+        <div class="cashier-actions">
+          <button class="btn btn-secondary btn-sm" onclick="loadCashierBills()">🔄 Refresh Bills</button>
+          <div id="cashier-token-status" class="token-status">
+            <span class="badge badge-success">JWT: cashier</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cashier-layout">
+        <!-- Left: Active Table Bills List -->
+        <div class="cashier-bills-panel card">
+          <div class="section-header">
+            <h3>Active Dining Tables & Bills</h3>
+            <div class="filter-group">
+              <button class="filter-pill active" id="filter-cashier-all" onclick="filterCashierBills('all')">All</button>
+              <button class="filter-pill" id="filter-cashier-unpaid" onclick="filterCashierBills('unpaid')">Unpaid</button>
+              <button class="filter-pill" id="filter-cashier-settled" onclick="filterCashierBills('settled')">Settled</button>
+            </div>
+          </div>
+          <div id="cashier-bills-list" class="cashier-bills-grid">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+
+        <!-- Right: Register / Checkout Terminal -->
+        <div class="cashier-terminal-panel card">
+          <div class="section-header">
+            <h3>Payment Terminal</h3>
+            <span id="cashier-terminal-table" class="badge badge-accent">Select a Table</span>
+          </div>
+
+          <div id="cashier-checkout-empty" class="empty-state">
+            <div class="empty-icon">🧾</div>
+            <h4>No Table Selected</h4>
+            <p class="subtext">Click on any table card on the left to review its bill and process payment.</p>
+          </div>
+
+          <div id="cashier-checkout-active" style="display: none;">
+            <!-- Receipt breakdown -->
+            <div class="receipt-card">
+              <div class="receipt-header">
+                <h4 id="receipt-table-title">Table T1 Receipt</h4>
+                <span id="receipt-session-badge" class="subtext">Session #--</span>
+              </div>
+              <div id="receipt-items-list" class="receipt-items">
+                <!-- Injected via JS -->
+              </div>
+              <hr class="receipt-divider">
+              <div class="receipt-totals">
+                <div class="total-row"><span>Subtotal:</span><strong id="receipt-subtotal">$0.00</strong></div>
+                <div class="total-row"><span>Tax (10%):</span><strong id="receipt-tax">$0.00</strong></div>
+                <div class="total-row total-highlight"><span>Total Due:</span><strong id="receipt-total">$0.00</strong></div>
+                <div class="total-row"><span>Already Paid:</span><span id="receipt-paid" class="text-success">$0.00</span></div>
+                <div class="total-row total-balance"><span>Balance Due:</span><strong id="receipt-balance" class="text-danger">$0.00</strong></div>
+              </div>
+            </div>
+
+            <!-- Payment Form -->
+            <div class="payment-controls">
+              <label class="form-label">Payment Method:</label>
+              <div class="payment-method-selector">
+                <button type="button" class="method-btn active" id="method-btn-card" onclick="selectPaymentMethod('card')">
+                  💳 Card
+                </button>
+                <button type="button" class="method-btn" id="method-btn-cash" onclick="selectPaymentMethod('cash')">
+                  💵 Cash
+                </button>
+                <button type="button" class="method-btn" id="method-btn-digital" onclick="selectPaymentMethod('digital')">
+                  📱 Digital / QR
+                </button>
+              </div>
+
+              <div class="amount-field-group">
+                <label for="payment-amount-input">Amount to Tender ($):</label>
+                <input type="number" id="payment-amount-input" step="0.01" min="0.01">
+              </div>
+
+              <div class="checkout-checkbox">
+                <label>
+                  <input type="checkbox" id="close-session-checkbox" checked>
+                  Close table session & mark table available upon settlement
+                </label>
+              </div>
+
+              <button id="btn-process-payment" class="btn btn-primary btn-block" onclick="submitCashierPayment()">
+                💰 Settle Payment
+              </button>
+            </div>
+          </div>
+
+          <!-- Success Receipt Box -->
+          <div id="cashier-payment-success" style="display: none;" class="payment-success-card">
+            <div class="success-icon">✅</div>
+            <h4>Payment Settled Successfully!</h4>
+            <p id="success-receipt-id" class="subtext">Receipt: RCP_--</p>
+            <div class="success-details" id="success-receipt-details"></div>
+            <div class="success-actions">
+              <button class="btn btn-secondary btn-sm" onclick="printReceipt()">🖨️ Print Receipt</button>
+              <button class="btn btn-primary btn-sm" onclick="resetCashierTerminal()">Next Table</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Transactions Section -->
+      <div class="recent-transactions-card card">
+        <div class="section-header">
+          <h3>Recent Settled Transactions</h3>
+          <span class="subtext" id="transactions-count">Live Branch Payments</span>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table" id="transactions-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Table</th>
+                <th>Order #</th>
+                <th>Amount</th>
+                <th>Method</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="transactions-tbody">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
   </main>
+
+  <!-- ======================================================== -->
+  <!-- Moveable Floating JARVIS Robot Assistant (Bottom Right)  -->
+  <!-- ======================================================== -->
+  <div id="jarvis-floating-widget" class="jarvis-floating-widget" role="button" aria-label="Ask JARVIS AI Assistant" title="Click to chat with JARVIS • Drag to move anywhere">
+    <div class="jarvis-floating-bubble">
+      <span class="bubble-sparkle">✨</span>
+      <span class="bubble-text" id="jarvis-bubble-label">Ask JARVIS</span>
+      <span class="bubble-arrow"></span>
+    </div>
+    <div class="jarvis-floating-robot-stage">
+      <img src="/images/jarvis_robot_transparent.png" alt="JARVIS AI" class="jarvis-floating-robot-img" draggable="false">
+      <div class="jarvis-holo-base">
+        <div class="jarvis-holo-ring"></div>
+        <div class="jarvis-holo-glow"></div>
+      </div>
+    </div>
+    <div class="jarvis-drag-pill" title="Drag to reposition">
+      <span>⋮⋮</span>
+    </div>
+  </div>
 
   <!-- ======================================================== -->
   <!-- "Ask JARVIS" AI Modal (Scoped by Active Portal Role)      -->
@@ -415,7 +587,9 @@
     <div class="modal-content card" onclick="event.stopPropagation()">
       <div class="modal-header">
         <div class="jarvis-identity">
-          <div class="jarvis-avatar">🤖</div>
+          <div class="jarvis-avatar">
+            <img src="/images/jarvis_robot_head.png" alt="JARVIS Robot" class="jarvis-identity-robot-img">
+          </div>
           <div>
             <h3 id="jarvis-role-title">JARVIS Restaurant AI</h3>
             <p id="jarvis-role-subtitle" class="subtext">Powered by Groq Free Model (openai/gpt-oss-120b)</p>
@@ -442,7 +616,9 @@
       <!-- Chat History -->
       <div id="jarvis-messages" class="chat-messages">
         <div class="chat-msg jarvis-msg">
-          <div class="msg-avatar">🤖</div>
+          <div class="msg-avatar">
+            <img src="/images/jarvis_robot_head.png" alt="JARVIS" class="jarvis-avatar-img">
+          </div>
           <div class="msg-body" id="jarvis-welcome-msg">
             Hello! I am JARVIS. How may I assist you with your table today?
           </div>

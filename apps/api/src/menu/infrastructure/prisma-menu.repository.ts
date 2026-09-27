@@ -23,6 +23,8 @@ export class PrismaMenuRepository implements IMenuRepository {
           price: Number(r.price),
           station: r.station,
           allergens: Array.isArray(r.allergens) ? (r.allergens as string[]) : [],
+          imageUrl: r.image_url,
+          image_url: r.image_url,
         }),
     );
   }
@@ -42,6 +44,8 @@ export class PrismaMenuRepository implements IMenuRepository {
       price: Number(r.price),
       station: r.station,
       allergens: Array.isArray(r.allergens) ? (r.allergens as string[]) : [],
+      imageUrl: r.image_url,
+      image_url: r.image_url,
     });
   }
 }

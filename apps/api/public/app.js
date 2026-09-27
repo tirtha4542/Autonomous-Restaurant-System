@@ -41,6 +41,17 @@ let state = {
     items: [],
   },
 
+  cashier: {
+    token: null,
+    actor: null,
+    employee: null,
+    pendingBills: [],
+    filter: 'all',
+    selectedSessionId: null,
+    selectedPaymentMethod: 'card',
+    recentPayments: [],
+  },
+
   // Per-table isolated customer chats so Table 1 and Table 3 never share chat history
   customerTableChatHistories: {},
   customerTableSessionIds: {},
@@ -64,12 +75,19 @@ let state = {
         content: 'Chef! I have real-time visibility into the preparation queues across all stations.',
       },
     ],
+    cashier: [
+      {
+        role: 'assistant',
+        content: 'Hello Tom! I am your Cashier assistant. I can look up itemized table bills, verify payment statuses, and calculate totals.',
+      },
+    ],
   },
 
   roleSessionIds: {
     manager: 'sess_mgr_' + Math.random().toString(36).substring(2, 9),
     waiter: 'sess_wtr_' + Math.random().toString(36).substring(2, 9),
     kitchen: 'sess_ktc_' + Math.random().toString(36).substring(2, 9),
+    cashier: 'sess_csh_' + Math.random().toString(36).substring(2, 9),
   },
 };
 
@@ -105,6 +123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadPublicMenu();
   await loadBranchTables();
   await initCustomerSession();
+  initMoveableJarvisWidget();
 
   // Handle URL query parameters (?portal=manager, ?table=T3, etc.)
   const urlParams = new URLSearchParams(window.location.search);
@@ -146,6 +165,8 @@ function switchPortal(portal) {
     loadWaiterData();
   } else if (portal === 'kitchen' && state.kitchen.token) {
     loadKitchenQueue();
+  } else if (portal === 'cashier') {
+    initCashier();
   }
 
   // 4. Update JARVIS AI Context & Prompts & Role Chat History
@@ -210,6 +231,9 @@ function handleRealtimeEvent(event) {
     loadWaiterData();
   } else if (state.currentPortal === 'kitchen' && state.kitchen.token) {
     loadKitchenQueue();
+  } else if (state.currentPortal === 'cashier' && state.cashier.token) {
+    loadCashierBills();
+    loadCashierPaymentHistory();
   }
 }
 
@@ -337,6 +361,22 @@ function filterCustomerMenu(station) {
   renderCustomerMenu();
 }
 
+function getMenuItemImage(item) {
+  if (!item) return '/images/placeholder.svg';
+  if (item.image_url) return item.image_url;
+  if (item.imageUrl) return item.imageUrl;
+
+  const nameNorm = (item.name || '').toLowerCase();
+  if (nameNorm.includes('burger')) return '/images/cheeseburger.jpg';
+  if (nameNorm.includes('salmon')) return '/images/grilled_salmon.jpg';
+  if (nameNorm.includes('caesar') || nameNorm.includes('salad')) return '/images/caesar_salad.jpg';
+  if (nameNorm.includes('frie') || nameNorm.includes('truffle')) return '/images/truffle_fries.jpg';
+  if (nameNorm.includes('espresso') || nameNorm.includes('coffee')) return '/images/espresso.jpg';
+  if (nameNorm.includes('mojito') || nameNorm.includes('lime')) return '/images/lime_mojito.jpg';
+
+  return '/images/placeholder.svg';
+}
+
 function renderCustomerMenu() {
   const container = document.getElementById('menu-grid');
   if (!container) return;
@@ -347,20 +387,34 @@ function renderCustomerMenu() {
 
   container.innerHTML = items
     .map(
-      (item) => `
+      (item) => {
+        const imgUrl = getMenuItemImage(item);
+        const cartQty = state.cart.has(item.id) ? state.cart.get(item.id).quantity : 0;
+        return `
     <div class="menu-card card">
-      <div class="menu-card-top">
-        <span class="menu-card-title">${escapeHtml(item.name)}</span>
-        <span class="menu-card-price">$${Number(item.price).toFixed(2)}</span>
+      <div class="menu-card-media">
+        <img src="${imgUrl}" alt="${escapeHtml(item.name)}" class="menu-card-img" loading="lazy" onerror="this.onerror=null;this.src='/images/placeholder.svg'">
+        <span class="menu-card-badge-station">${escapeHtml(item.station)}</span>
+        ${cartQty > 0 ? `<span class="menu-card-cart-pill">${cartQty} in cart</span>` : ''}
       </div>
-      <p class="menu-card-desc">${escapeHtml(item.description)}</p>
-      <div class="menu-card-tags">
-        <span class="tag-station">${escapeHtml(item.station)}</span>
-        ${(item.allergens || []).map((a) => `<span class="tag-allergen">${escapeHtml(a)}</span>`).join('')}
+      <div class="menu-card-content">
+        <div class="menu-card-top">
+          <h3 class="menu-card-title">${escapeHtml(item.name)}</h3>
+          <span class="menu-card-price">$${Number(item.price).toFixed(2)}</span>
+        </div>
+        <p class="menu-card-desc">${escapeHtml(item.description)}</p>
+        <div class="menu-card-tags">
+          ${(item.allergens || []).map((a) => `<span class="tag-allergen">${escapeHtml(a)}</span>`).join('')}
+        </div>
+        <div class="menu-card-actions">
+          <button class="btn btn-primary btn-sm btn-add-cart" onclick="addToCart(${item.id})">
+            <span class="btn-icon">＋</span> Add to Order
+          </button>
+        </div>
       </div>
-      <button class="btn btn-secondary btn-sm" onclick="addToCart(${item.id})">+ Add to Order</button>
     </div>
-  `
+  `;
+      }
     )
     .join('');
 }
@@ -376,6 +430,7 @@ function addToCart(menuItemId) {
   }
 
   renderCart();
+  renderCustomerMenu();
 }
 
 function updateCartQty(menuItemId, delta) {
@@ -386,6 +441,7 @@ function updateCartQty(menuItemId, delta) {
     state.cart.delete(menuItemId);
   }
   renderCart();
+  renderCustomerMenu();
 }
 
 function renderCart() {
@@ -408,18 +464,24 @@ function renderCart() {
     const itemTotal = Number(entry.item.price) * entry.quantity;
     total += itemTotal;
     count += entry.quantity;
+    const imgUrl = getMenuItemImage(entry.item);
 
     html += `
       <div class="cart-item-row">
-        <div>
-          <div class="cart-item-name">${escapeHtml(entry.item.name)}</div>
-          <div class="subtext">$${Number(entry.item.price).toFixed(2)} each</div>
+        <div class="cart-item-main">
+          <img src="${imgUrl}" alt="${escapeHtml(entry.item.name)}" class="cart-item-thumb" onerror="this.onerror=null;this.src='/images/placeholder.svg'">
+          <div class="cart-item-details">
+            <div class="cart-item-name" title="${escapeHtml(entry.item.name)}">${escapeHtml(entry.item.name)}</div>
+            <div class="cart-item-unit-price">$${Number(entry.item.price).toFixed(2)} each</div>
+          </div>
         </div>
-        <div class="cart-item-qty">
-          <button class="cart-qty-btn" onclick="updateCartQty(${id}, -1)">-</button>
-          <span>${entry.quantity}</span>
-          <button class="cart-qty-btn" onclick="updateCartQty(${id}, 1)">+</button>
-          <strong style="margin-left: 0.5rem;">$${itemTotal.toFixed(2)}</strong>
+        <div class="cart-item-controls">
+          <div class="cart-item-qty">
+            <button class="cart-qty-btn" onclick="updateCartQty(${id}, -1)" title="Decrease quantity">−</button>
+            <span class="cart-qty-count">${entry.quantity}</span>
+            <button class="cart-qty-btn" onclick="updateCartQty(${id}, 1)" title="Increase quantity">+</button>
+          </div>
+          <strong class="cart-item-total">$${itemTotal.toFixed(2)}</strong>
         </div>
       </div>
     `;
@@ -519,8 +581,16 @@ async function refreshCustomerOrders() {
           <div class="order-items-preview">
             ${(o.order_items || [])
               .map(
-                (oi) =>
-                  `<div>• ${oi.quantity}x ${escapeHtml(oi.menu_items?.name || 'Dish')} <span class="badge ${oi.status === 'READY' ? 'badge-success' : 'badge-neutral'}">${oi.status}</span></div>`
+                (oi) => {
+                  const img = getMenuItemImage(oi.menu_items || { name: oi.name });
+                  return `
+                    <div class="order-item-chip">
+                      <img src="${img}" alt="" class="order-item-tiny-thumb" onerror="this.onerror=null;this.src='/images/placeholder.svg'">
+                      <span class="order-item-chip-text"><strong>${oi.quantity}x</strong> ${escapeHtml(oi.menu_items?.name || oi.name || 'Dish')}</span>
+                      <span class="badge ${oi.status === 'READY' ? 'badge-success' : 'badge-neutral'}">${oi.status}</span>
+                    </div>
+                  `;
+                }
               )
               .join('')}
           </div>
@@ -568,6 +638,7 @@ async function handleManagerLogin(event) {
 
     await loadManagerData();
     updateJarvisContext();
+    renderJarvisChatHistory();
   } catch (err) {
     console.error('Manager login error:', err);
     errorEl.textContent = err.message.includes('fetch') 
@@ -787,6 +858,7 @@ async function handleWaiterLogin(event) {
 
     await loadWaiterData();
     updateJarvisContext();
+    renderJarvisChatHistory();
   } catch (err) {
     console.error('Waiter login error:', err);
     errorEl.textContent = err.message.includes('fetch') 
@@ -909,6 +981,7 @@ async function handleKitchenLogin(event) {
 
     await loadKitchenQueue();
     updateJarvisContext();
+    renderJarvisChatHistory();
   } catch (err) {
     console.error('Kitchen login error:', err);
     errorEl.textContent = err.message.includes('fetch') 
@@ -1051,6 +1124,7 @@ function logoutStaff(role) {
     document.getElementById('kitchen-dashboard').style.display = 'none';
   }
   updateJarvisContext();
+  renderJarvisChatHistory();
 }
 
 // ============================================================
@@ -1061,48 +1135,102 @@ function updateJarvisContext() {
   const toolsBadge = document.getElementById('jarvis-tools-badge');
   const roleTitle = document.getElementById('jarvis-role-title');
   const promptsBar = document.getElementById('jarvis-quick-prompts');
-  const triggerLabel = document.getElementById('jarvis-btn-label');
+  const inputEl = document.getElementById('jarvis-input');
+  const triggerLabel = document.getElementById('jarvis-bubble-label') || 
+                       document.getElementById('jarvis-btn-label') || 
+                       document.querySelector('.jarvis-floating-bubble .bubble-text');
 
   if (state.currentPortal === 'customer') {
     const tableCode = state.customer.tableCode || 'T1';
-    triggerLabel.textContent = `Ask Table ${tableCode} Concierge`;
-    roleTitle.textContent = `JARVIS • Table ${tableCode} Concierge`;
-    actorBadge.textContent = `Customer (Table ${tableCode})`;
-    toolsBadge.textContent = 'get_menu, get_order_status';
-    promptsBar.innerHTML = `
-      <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What dishes are on the menu?')">What is on the menu?</button>
-      <button class="quick-prompt-pill" onclick="sendJarvisPrompt('Do you have gluten-free or vegetarian options?')">Dietary options?</button>
-      <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is the status of my order?')">My order status?</button>
-    `;
+    if (triggerLabel) triggerLabel.textContent = `Ask Table ${tableCode} Concierge`;
+    if (roleTitle) roleTitle.textContent = `JARVIS • Table ${tableCode} Concierge`;
+    if (actorBadge) actorBadge.textContent = `Customer (Table ${tableCode} • Session #${state.customer.sessionId || 'Active'})`;
+    if (toolsBadge) toolsBadge.textContent = 'get_menu, get_order_status';
+    if (inputEl) inputEl.placeholder = `Ask about menu, ingredients, allergens, or Table ${tableCode} order...`;
+    if (promptsBar) {
+      promptsBar.innerHTML = `
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What dishes are on the menu?')">What is on the menu?</button>
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('Do you have gluten-free or vegetarian options?')">Dietary options?</button>
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is the status of my order?')">My order status?</button>
+      `;
+    }
   } else if (state.currentPortal === 'manager') {
-    triggerLabel.textContent = 'Ask Executive JARVIS';
-    roleTitle.textContent = 'JARVIS • Executive Manager AI';
-    actorBadge.textContent = 'Sofia Alvarez (Manager • Branch #8)';
-    toolsBadge.textContent = 'get_branch_summary, get_audit_events, get_table_status, get_order_status, get_menu';
-    promptsBar.innerHTML = `
-      <button class="quick-prompt-pill" onclick="sendJarvisPrompt('Give me the branch summary and table occupancy numbers.')">Branch Summary & Tables</button>
-      <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What are the latest system audit events?')">Latest Audit Events</button>
-      <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is the current status of Table T1?')">Status of Table T1</button>
-    `;
+    const isLogged = !!state.manager.token;
+    const actorName = state.manager.actor?.full_name || 'Sofia Alvarez';
+    if (triggerLabel) triggerLabel.textContent = 'Ask Executive JARVIS';
+    if (roleTitle) roleTitle.textContent = 'JARVIS • Executive Manager AI';
+    if (actorBadge) {
+      actorBadge.textContent = isLogged
+        ? `${actorName} (General Manager • Branch #${state.branchId})`
+        : 'Manager (Not Authenticated • Sign in for Executive Tools)';
+    }
+    if (toolsBadge) toolsBadge.textContent = 'get_branch_summary, get_audit_events, get_table_status, get_order_status, get_menu, get_kitchen_queue, get_table_bill';
+    if (inputEl) inputEl.placeholder = 'Ask about branch metrics, tables occupancy, audit logs, kitchen queue, or bills...';
+    if (promptsBar) {
+      promptsBar.innerHTML = `
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('Give me the branch summary and table occupancy numbers.')">Branch Summary & Tables</button>
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What are the latest system audit events?')">Latest Audit Events</button>
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is the current status of Table T1?')">Status of Table T1</button>
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is the total bill for Table T1?')">Table T1 Bill</button>
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is currently in the kitchen queue?')">Kitchen Queue</button>
+      `;
+    }
   } else if (state.currentPortal === 'waiter') {
-    triggerLabel.textContent = 'Ask Waiter Assistant';
-    roleTitle.textContent = 'JARVIS • Floor Waiter Assistant';
-    actorBadge.textContent = 'Asha Mehta (Waiter • Tables T1, T2, T3)';
-    toolsBadge.textContent = 'get_table_status, get_order_status, get_menu';
-    promptsBar.innerHTML = `
-      <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is the status of Table T1?')">Table T1 Status</button>
-      <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What items are on the menu?')">Check Menu Details</button>
-      <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is the status of Order #1?')">Check Order #1</button>
-    `;
+    const isLogged = !!state.waiter.token;
+    const actorName = state.waiter.actor?.full_name || 'Asha Mehta';
+    if (triggerLabel) triggerLabel.textContent = 'Ask Waiter Assistant';
+    if (roleTitle) roleTitle.textContent = 'JARVIS • Floor Waiter Assistant';
+    if (actorBadge) {
+      actorBadge.textContent = isLogged
+        ? `${actorName} (Floor Waiter • Branch #${state.branchId})`
+        : 'Waiter (Not Authenticated • Sign in for Waiter Tools)';
+    }
+    if (toolsBadge) toolsBadge.textContent = 'get_table_status, get_order_status, get_menu';
+    if (inputEl) inputEl.placeholder = 'Ask about assigned tables, order delivery status, or menu questions...';
+    if (promptsBar) {
+      promptsBar.innerHTML = `
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is the status of Table T1?')">Table T1 Status</button>
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What items are on the menu?')">Check Menu Details</button>
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is the status of Order #1?')">Check Order #1</button>
+      `;
+    }
   } else if (state.currentPortal === 'kitchen') {
-    triggerLabel.textContent = 'Ask Kitchen Expediter';
-    roleTitle.textContent = 'JARVIS • Kitchen Expediter';
-    actorBadge.textContent = 'Priya Nair (Kitchen Chef)';
-    toolsBadge.textContent = 'get_kitchen_queue, get_order_status';
-    promptsBar.innerHTML = `
-      <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is currently in the kitchen queue?')">All Kitchen Queue Tickets</button>
-      <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What items are in the grill queue?')">Grill Station Queue</button>
-    `;
+    const isLogged = !!state.kitchen.token;
+    const actorName = state.kitchen.actor?.full_name || 'Priya Nair';
+    if (triggerLabel) triggerLabel.textContent = 'Ask Kitchen Expediter';
+    if (roleTitle) roleTitle.textContent = 'JARVIS • Kitchen Expediter';
+    if (actorBadge) {
+      actorBadge.textContent = isLogged
+        ? `${actorName} (Kitchen Chef • Branch #${state.branchId})`
+        : 'Kitchen Chef (Not Authenticated • Sign in for KDS Tools)';
+    }
+    if (toolsBadge) toolsBadge.textContent = 'get_kitchen_queue, get_order_status';
+    if (inputEl) inputEl.placeholder = 'Ask about kitchen tickets, preparation stations, or item statuses...';
+    if (promptsBar) {
+      promptsBar.innerHTML = `
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is currently in the kitchen queue?')">All Kitchen Queue Tickets</button>
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What items are in the grill queue?')">Grill Station Queue</button>
+      `;
+    }
+  } else if (state.currentPortal === 'cashier') {
+    const isLogged = !!state.cashier.token;
+    const actorName = state.cashier.actor?.full_name || 'Tom Becker';
+    if (triggerLabel) triggerLabel.textContent = 'Ask Cashier Assistant';
+    if (roleTitle) roleTitle.textContent = 'JARVIS • Cashier & Billing Assistant';
+    if (actorBadge) {
+      actorBadge.textContent = isLogged
+        ? `${actorName} (Cashier • Billing Desk)`
+        : 'Cashier (Connecting...)';
+    }
+    if (toolsBadge) toolsBadge.textContent = 'get_table_bill, get_order_status, get_table_status, get_menu';
+    if (inputEl) inputEl.placeholder = 'Ask about table bills, balance due, order receipts, or checkout statuses...';
+    if (promptsBar) {
+      promptsBar.innerHTML = `
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is the total bill for Table T1?')">Table T1 Bill</button>
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('What is the current bill for Table T2?')">Table T2 Bill</button>
+        <button class="quick-prompt-pill" onclick="sendJarvisPrompt('Check status of Order #1')">Check Order #1</button>
+      `;
+    }
   }
 }
 
@@ -1114,7 +1242,19 @@ function renderJarvisChatHistory() {
   if (state.currentPortal === 'customer') {
     history = getCustomerTableChat(state.customer.tableCode);
   } else {
-    history = state.chatHistories[state.currentPortal] || [];
+    const role = state.currentPortal;
+    if (!state.chatHistories[role]) {
+      const defaultGreetings = {
+        manager: 'Welcome General Manager. I have full operational access to branch metrics, audit events, tables, kitchen queue, and billing summaries.',
+        waiter: 'Hello Asha! I am here to help you monitor your assigned floor tables, check orders, and assist guests.',
+        kitchen: 'Chef! I have real-time visibility into the preparation queues across all stations.',
+        cashier: 'Hello Tom! I am your Cashier assistant. I can look up itemized table bills, verify payment statuses, and calculate totals.',
+      };
+      state.chatHistories[role] = [
+        { role: 'assistant', content: defaultGreetings[role] || 'Hello! How may I assist you today?' },
+      ];
+    }
+    history = state.chatHistories[role];
   }
 
   container.innerHTML = history
@@ -1128,7 +1268,7 @@ function renderJarvisChatHistory() {
       } else {
         return `
           <div class="chat-msg jarvis-msg">
-            <div class="msg-avatar">🤖</div>
+            <div class="msg-avatar"><img src="/images/jarvis_robot_head.png" alt="JARVIS" class="jarvis-avatar-img"></div>
             <div class="msg-body">${formatMarkdownReply(msg.content)}</div>
           </div>
         `;
@@ -1157,9 +1297,10 @@ function clearCurrentRoleChat() {
   state.roleSessionIds[role] = `sess_${role}_` + Math.random().toString(36).substring(2, 9);
 
   const defaultGreetings = {
-    manager: 'Welcome General Manager. I have full operational access to branch metrics, audit events, tables, and kitchen queue.',
+    manager: 'Welcome General Manager. I have full operational access to branch metrics, audit events, tables, kitchen queue, and billing summaries.',
     waiter: 'Hello Asha! I am here to help you monitor your assigned floor tables, check orders, and assist guests.',
     kitchen: 'Chef! I have real-time visibility into the preparation queues across all stations.',
+    cashier: 'Hello Tom! I am your Cashier assistant. I can look up itemized table bills, verify payment statuses, and calculate totals.',
   };
 
   state.chatHistories[role] = [
@@ -1175,8 +1316,129 @@ function toggleJarvisModal() {
   if (modal.classList.contains('open')) {
     updateJarvisContext();
     renderJarvisChatHistory();
-    document.getElementById('jarvis-input').focus();
+    const input = document.getElementById('jarvis-input');
+    if (input) input.focus();
   }
+}
+
+// ============================================================
+// Moveable Floating JARVIS Robot Widget (Drag & Drop)
+// ============================================================
+function initMoveableJarvisWidget() {
+  const widget = document.getElementById('jarvis-floating-widget');
+  if (!widget) return;
+
+  let isDragging = false;
+  let startX = 0;
+  let startY = 0;
+  let initialLeft = 0;
+  let initialTop = 0;
+  let hasMoved = false;
+
+  // Restore saved position if valid
+  const savedPos = localStorage.getItem('tavonza_jarvis_pos');
+  if (savedPos) {
+    try {
+      const pos = JSON.parse(savedPos);
+      const maxX = Math.max(10, window.innerWidth - widget.offsetWidth - 10);
+      const maxY = Math.max(10, window.innerHeight - widget.offsetHeight - 10);
+      const left = Math.min(Math.max(10, pos.left), maxX);
+      const top = Math.min(Math.max(10, pos.top), maxY);
+      widget.style.left = `${left}px`;
+      widget.style.top = `${top}px`;
+      widget.style.right = 'auto';
+      widget.style.bottom = 'auto';
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function getPointerCoords(e) {
+    if (e.touches && e.touches.length > 0) {
+      return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    return { x: e.clientX, y: e.clientY };
+  }
+
+  function onPointerDown(e) {
+    // Only primary mouse button or touch
+    if (e.type === 'mousedown' && e.button !== 0) return;
+
+    isDragging = true;
+    hasMoved = false;
+    widget.classList.add('is-dragging');
+
+    const coords = getPointerCoords(e);
+    startX = coords.x;
+    startY = coords.y;
+
+    const rect = widget.getBoundingClientRect();
+    initialLeft = rect.left;
+    initialTop = rect.top;
+
+    widget.style.left = `${initialLeft}px`;
+    widget.style.top = `${initialTop}px`;
+    widget.style.right = 'auto';
+    widget.style.bottom = 'auto';
+
+    document.addEventListener('mousemove', onPointerMove);
+    document.addEventListener('mouseup', onPointerUp);
+    document.addEventListener('touchmove', onPointerMove, { passive: false });
+    document.addEventListener('touchend', onPointerUp);
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+
+    const coords = getPointerCoords(e);
+    const dx = coords.x - startX;
+    const dy = coords.y - startY;
+
+    if (Math.hypot(dx, dy) > 5) {
+      hasMoved = true;
+      if (e.cancelable) e.preventDefault();
+    }
+
+    const maxX = Math.max(10, window.innerWidth - widget.offsetWidth - 10);
+    const maxY = Math.max(10, window.innerHeight - widget.offsetHeight - 10);
+
+    const newLeft = Math.min(Math.max(10, initialLeft + dx), maxX);
+    const newTop = Math.min(Math.max(10, initialTop + dy), maxY);
+
+    widget.style.left = `${newLeft}px`;
+    widget.style.top = `${newTop}px`;
+  }
+
+  function onPointerUp() {
+    if (!isDragging) return;
+    isDragging = false;
+    widget.classList.remove('is-dragging');
+
+    document.removeEventListener('mousemove', onPointerMove);
+    document.removeEventListener('mouseup', onPointerUp);
+    document.removeEventListener('touchmove', onPointerMove);
+    document.removeEventListener('touchend', onPointerUp);
+
+    if (hasMoved) {
+      const rect = widget.getBoundingClientRect();
+      localStorage.setItem('tavonza_jarvis_pos', JSON.stringify({ left: rect.left, top: rect.top }));
+    } else {
+      toggleJarvisModal();
+    }
+  }
+
+  widget.addEventListener('mousedown', onPointerDown);
+  widget.addEventListener('touchstart', onPointerDown, { passive: true });
+
+  window.addEventListener('resize', () => {
+    if (widget.style.left) {
+      const rect = widget.getBoundingClientRect();
+      const maxX = Math.max(10, window.innerWidth - widget.offsetWidth - 10);
+      const maxY = Math.max(10, window.innerHeight - widget.offsetHeight - 10);
+      if (rect.left > maxX) widget.style.left = `${maxX}px`;
+      if (rect.top > maxY) widget.style.top = `${maxY}px`;
+    }
+  });
 }
 
 function onModalBackdropClick(event) {
@@ -1205,9 +1467,9 @@ async function sendJarvisMessage() {
   const messagesContainer = document.getElementById('jarvis-messages');
 
   // Determine active token & active history & active session ID
-  let activeToken = state.customer.token;
-  let chatHistory;
-  let sessionId;
+  let activeToken = null;
+  let chatHistory = null;
+  let sessionId = null;
 
   if (currentRole === 'customer') {
     activeToken = state.customer.token;
@@ -1215,16 +1477,43 @@ async function sendJarvisMessage() {
     sessionId = getCustomerTableSessionId(state.customer.tableCode);
   } else if (currentRole === 'manager') {
     activeToken = state.manager.token;
+    if (!state.chatHistories.manager) state.chatHistories.manager = [];
     chatHistory = state.chatHistories.manager;
     sessionId = state.roleSessionIds.manager;
   } else if (currentRole === 'waiter') {
     activeToken = state.waiter.token;
+    if (!state.chatHistories.waiter) state.chatHistories.waiter = [];
     chatHistory = state.chatHistories.waiter;
     sessionId = state.roleSessionIds.waiter;
   } else if (currentRole === 'kitchen') {
     activeToken = state.kitchen.token;
+    if (!state.chatHistories.kitchen) state.chatHistories.kitchen = [];
     chatHistory = state.chatHistories.kitchen;
     sessionId = state.roleSessionIds.kitchen;
+  } else if (currentRole === 'cashier') {
+    activeToken = state.cashier.token;
+    if (!state.chatHistories.cashier) state.chatHistories.cashier = [];
+    chatHistory = state.chatHistories.cashier;
+    sessionId = state.roleSessionIds.cashier;
+  }
+
+  // Guard against unauthenticated requests
+  if (!activeToken) {
+    if (currentRole !== 'customer') {
+      alert(`Please sign in as ${currentRole.toUpperCase()} to chat with JARVIS using your staff credentials.`);
+    } else {
+      alert('Connecting table session... Please refresh or scan table QR code.');
+    }
+    return;
+  }
+
+  if (!chatHistory) {
+    state.chatHistories[currentRole] = [];
+    chatHistory = state.chatHistories[currentRole];
+  }
+  if (!sessionId) {
+    state.roleSessionIds[currentRole] = `sess_${currentRole}_` + Math.random().toString(36).substring(2, 9);
+    sessionId = state.roleSessionIds[currentRole];
   }
 
   // 1. Add user message to active role/table history & render to DOM
@@ -1241,7 +1530,7 @@ async function sendJarvisMessage() {
   const assistantMsgId = 'assistant_msg_' + Date.now();
   messagesContainer.innerHTML += `
     <div id="${assistantMsgId}" class="chat-msg jarvis-msg">
-      <div class="msg-avatar">🤖</div>
+      <div class="msg-avatar"><img src="/images/jarvis_robot_head.png" alt="JARVIS" class="jarvis-avatar-img"></div>
       <div class="msg-body"><span class="streaming-status"><em>JARVIS is consulting tools & reasoning...</em></span><span class="streaming-cursor"></span></div>
     </div>
   `;
@@ -1374,3 +1663,332 @@ function formatMarkdownReply(text) {
   finalHtml = finalHtml.replace(/`([^`]+)`/g, '<code>$1</code>');
   return finalHtml;
 }
+
+// ============================================================
+// 5. CASHIER PORTAL LOGIC (BILLING, PAYMENTS & SETTLEMENT)
+// ============================================================
+async function initCashier() {
+  if (!state.cashier.token) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'cashier', password: 'password123' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        state.cashier.token = data.access_token;
+        state.cashier.actor = data.actor;
+        state.cashier.employee = { full_name: 'Tom Becker', role: 'cashier' };
+        const statusEl = document.getElementById('cashier-token-status');
+        if (statusEl) statusEl.innerHTML = `<span class="badge badge-success">JWT Active: ${data.actor.actor_type}</span>`;
+      }
+    } catch (err) {
+      console.error('Failed to log in as cashier:', err);
+    }
+  }
+
+  await loadCashierBills();
+  await loadCashierPaymentHistory();
+  if (state.currentPortal === 'cashier') {
+    updateJarvisContext();
+    renderJarvisChatHistory();
+  }
+}
+
+async function loadCashierBills() {
+  if (!state.cashier.token) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/payments/pending-bills`, {
+      headers: { Authorization: `Bearer ${state.cashier.token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      state.cashier.pendingBills = data.bills || [];
+      renderCashierBills();
+
+      // If a session was selected, re-render its checkout
+      if (state.cashier.selectedSessionId) {
+        const selected = state.cashier.pendingBills.find((b) => b.session_id === state.cashier.selectedSessionId);
+        if (selected) {
+          renderCashierCheckout(selected);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load pending bills:', err);
+  }
+}
+
+function filterCashierBills(filter) {
+  state.cashier.filter = filter;
+  ['all', 'unpaid', 'settled'].forEach((f) => {
+    const btn = document.getElementById(`filter-cashier-${f}`);
+    if (btn) btn.classList.toggle('active', f === filter);
+  });
+  renderCashierBills();
+}
+
+function renderCashierBills() {
+  const container = document.getElementById('cashier-bills-list');
+  if (!container) return;
+
+  let bills = state.cashier.pendingBills;
+  if (state.cashier.filter === 'unpaid') {
+    bills = bills.filter((b) => b.payment_status !== 'SETTLED');
+  } else if (state.cashier.filter === 'settled') {
+    bills = bills.filter((b) => b.payment_status === 'SETTLED');
+  }
+
+  if (bills.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state" style="grid-column: 1 / -1; padding: 2.5rem 1rem;">
+        <div class="empty-icon">🍽️</div>
+        <h4>No ${state.cashier.filter !== 'all' ? state.cashier.filter : 'Active'} Table Sessions</h4>
+        <p class="subtext">Active dining sessions with orders will appear here automatically.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = bills
+    .map((bill) => {
+      const isSelected = bill.session_id === state.cashier.selectedSessionId;
+      const statusBadge =
+        bill.payment_status === 'SETTLED'
+          ? '<span class="badge badge-success">SETTLED</span>'
+          : bill.payment_status === 'PARTIAL'
+          ? '<span class="badge badge-warning">PARTIAL</span>'
+          : '<span class="badge badge-danger">UNPAID</span>';
+
+      return `
+        <div class="cashier-bill-card card ${isSelected ? 'selected' : ''}" onclick="selectCashierBill(${bill.session_id})">
+          <div class="card-header">
+            <div>
+              <h4 style="margin: 0; font-size: 1.15rem;">Table ${bill.table_code}</h4>
+              <span class="subtext">Session #${bill.session_id} • ${bill.guests_count} guest(s)</span>
+            </div>
+            ${statusBadge}
+          </div>
+          <div class="bill-stats">
+            <div><span class="subtext">Items:</span> <strong>${bill.items.length}</strong></div>
+            <div><span class="subtext">Orders:</span> <strong>${bill.orders_count}</strong></div>
+          </div>
+          <div class="bill-totals-preview">
+            <div class="preview-row"><span>Total:</span><strong>$${bill.total.toFixed(2)}</strong></div>
+            <div class="preview-row"><span>Due:</span><strong class="${bill.balance_due > 0 ? 'text-danger' : 'text-success'}">$${bill.balance_due.toFixed(2)}</strong></div>
+          </div>
+          <button class="btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline'} btn-block" style="margin-top: 0.75rem;">
+            ${isSelected ? '✓ In Register' : 'Review & Settle →'}
+          </button>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+async function selectCashierBill(sessionId) {
+  state.cashier.selectedSessionId = sessionId;
+  renderCashierBills();
+
+  const bill = state.cashier.pendingBills.find((b) => b.session_id === sessionId);
+  if (bill) {
+    renderCashierCheckout(bill);
+  }
+}
+
+function renderCashierCheckout(bill) {
+  const emptyEl = document.getElementById('cashier-checkout-empty');
+  const activeEl = document.getElementById('cashier-checkout-active');
+  const successEl = document.getElementById('cashier-payment-success');
+  const tableBadge = document.getElementById('cashier-terminal-table');
+
+  if (emptyEl) emptyEl.style.display = 'none';
+  if (successEl) successEl.style.display = 'none';
+  if (activeEl) activeEl.style.display = 'block';
+
+  if (tableBadge) tableBadge.textContent = `Table ${bill.table_code} • Session #${bill.session_id}`;
+  document.getElementById('receipt-table-title').textContent = `Table ${bill.table_code} Bill`;
+  document.getElementById('receipt-session-badge').textContent = `Session #${bill.session_id} • ${bill.payment_status}`;
+
+  const itemsList = document.getElementById('receipt-items-list');
+  if (itemsList) {
+    if (bill.items.length === 0) {
+      itemsList.innerHTML = '<div class="subtext" style="padding: 10px 0;">No order items submitted for this table yet.</div>';
+    } else {
+      itemsList.innerHTML = bill.items
+        .map(
+          (item) => `
+          <div class="receipt-item-row">
+            <span class="item-qty">${item.quantity}x</span>
+            <span class="item-name">${escapeHtml(item.name)}</span>
+            <span class="item-price">$${item.line_total.toFixed(2)}</span>
+          </div>
+        `
+        )
+        .join('');
+    }
+  }
+
+  document.getElementById('receipt-subtotal').textContent = `$${bill.subtotal.toFixed(2)}`;
+  document.getElementById('receipt-tax').textContent = `$${bill.tax.toFixed(2)}`;
+  document.getElementById('receipt-total').textContent = `$${bill.total.toFixed(2)}`;
+  document.getElementById('receipt-paid').textContent = `$${bill.paid_amount.toFixed(2)}`;
+  document.getElementById('receipt-balance').textContent = `$${bill.balance_due.toFixed(2)}`;
+
+  const amountInput = document.getElementById('payment-amount-input');
+  if (amountInput) {
+    amountInput.value = bill.balance_due > 0 ? bill.balance_due.toFixed(2) : bill.total.toFixed(2);
+  }
+
+  const settleBtn = document.getElementById('btn-process-payment');
+  if (settleBtn) {
+    if (bill.balance_due === 0 && bill.total > 0) {
+      settleBtn.textContent = 'Bill Already Settled ✓';
+      settleBtn.disabled = true;
+    } else {
+      settleBtn.textContent = '💰 Settle Payment';
+      settleBtn.disabled = false;
+    }
+  }
+}
+
+function selectPaymentMethod(method) {
+  state.cashier.selectedPaymentMethod = method;
+  ['card', 'cash', 'digital'].forEach((m) => {
+    const btn = document.getElementById(`method-btn-${m}`);
+    if (btn) btn.classList.toggle('active', m === method);
+  });
+}
+
+async function submitCashierPayment() {
+  if (!state.cashier.token || !state.cashier.selectedSessionId) return;
+
+  const sessionId = state.cashier.selectedSessionId;
+  const amountInput = document.getElementById('payment-amount-input');
+  const amount = parseFloat(amountInput.value);
+  const closeSession = document.getElementById('close-session-checkbox')?.checked || false;
+
+  if (isNaN(amount) || amount <= 0) {
+    alert('Please enter a valid payment amount greater than zero.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-process-payment');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Processing Payment...';
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/payments/process`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${state.cashier.token}`,
+      },
+      body: JSON.stringify({
+        table_session_id: sessionId,
+        amount: amount,
+        method: state.cashier.selectedPaymentMethod,
+        close_session: closeSession,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Payment processing failed');
+    }
+
+    const data = await res.json();
+
+    // Show success view
+    document.getElementById('cashier-checkout-active').style.display = 'none';
+    const successEl = document.getElementById('cashier-payment-success');
+    successEl.style.display = 'block';
+
+    document.getElementById('success-receipt-id').textContent = `Receipt #${data.receipt_id}`;
+    document.getElementById('success-receipt-details').innerHTML = `
+      <div class="receipt-summary-box">
+        <div><strong>Table:</strong> ${data.table.code}</div>
+        <div><strong>Amount Paid:</strong> $${data.payment.amount.toFixed(2)} (${data.payment.method.toUpperCase()})</div>
+        <div><strong>Balance Remaining:</strong> $${data.bill_summary.balance_due.toFixed(2)}</div>
+        <div><strong>Session Closed:</strong> ${data.session_closed ? 'Yes (Table released)' : 'No (Session still open)'}</div>
+        <div><strong>Timestamp:</strong> ${new Date(data.payment.timestamp).toLocaleTimeString()}</div>
+      </div>
+    `;
+
+    // Refresh bills & history
+    await loadCashierBills();
+    await loadCashierPaymentHistory();
+  } catch (err) {
+    console.error('Payment failed:', err);
+    alert(`Payment Error: ${err.message}`);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '💰 Settle Payment';
+    }
+  }
+}
+
+function resetCashierTerminal() {
+  state.cashier.selectedSessionId = null;
+  document.getElementById('cashier-payment-success').style.display = 'none';
+  document.getElementById('cashier-checkout-active').style.display = 'none';
+  document.getElementById('cashier-checkout-empty').style.display = 'block';
+  document.getElementById('cashier-terminal-table').textContent = 'Select a Table';
+  renderCashierBills();
+}
+
+function printReceipt() {
+  window.print();
+}
+
+async function loadCashierPaymentHistory() {
+  if (!state.cashier.token) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/payments/history`, {
+      headers: { Authorization: `Bearer ${state.cashier.token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      state.cashier.recentPayments = data.payments || [];
+      renderCashierPaymentHistory();
+    }
+  } catch (err) {
+    console.error('Failed to load payment history:', err);
+  }
+}
+
+function renderCashierPaymentHistory() {
+  const tbody = document.getElementById('transactions-tbody');
+  const countEl = document.getElementById('transactions-count');
+  if (!tbody) return;
+
+  const payments = state.cashier.recentPayments;
+  if (countEl) countEl.textContent = `${payments.length} settled transaction(s)`;
+
+  if (payments.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="subtext" style="text-align: center; padding: 1.5rem;">No recent payment records found.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = payments
+    .map(
+      (p) => `
+      <tr>
+        <td><code>#${p.id}</code></td>
+        <td><strong>Table ${escapeHtml(p.table_code)}</strong></td>
+        <td>Order #${p.order_id}</td>
+        <td><strong class="text-success">$${p.amount.toFixed(2)}</strong></td>
+        <td><span class="badge badge-accent">${p.method.toUpperCase()}</span></td>
+        <td><span class="badge badge-success">SETTLED</span></td>
+      </tr>
+    `
+    )
+    .join('');
+}
+

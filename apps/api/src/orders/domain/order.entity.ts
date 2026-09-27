@@ -9,6 +9,8 @@ export interface OrderItemProps {
   station: string;
   modifiers?: Record<string, any>;
   status?: string;
+  imageUrl?: string | null;
+  image_url?: string | null;
 }
 
 export interface OrderProps {

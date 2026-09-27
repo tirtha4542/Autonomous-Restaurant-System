@@ -101,6 +101,27 @@ TOOLS: dict[str, dict] = {
             },
         },
     },
+    "get_table_bill": {
+        "required_permission": "payments.read",
+        "risk_tier": "read_only",
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": "get_table_bill",
+                "description": "Get the current bill breakdown for a dining table or table session, including ordered items, subtotal, tax, amount paid, and outstanding balance.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "table_id": {
+                            "type": "string",
+                            "description": "The table code (e.g. 'T1', 'T2') or session ID.",
+                        }
+                    },
+                    "required": ["table_id"],
+                },
+            },
+        },
+    },
 }
 
 

@@ -168,8 +168,11 @@ export class AuthService {
         Permissions.ORDERS_WRITE,
         Permissions.ORDERS_ACCEPT,
         Permissions.ORDERS_REJECT,
+        Permissions.PAYMENTS_READ,
+        Permissions.PAYMENTS_WRITE,
         Permissions.REPORTS_READ,
         Permissions.STAFF_READ,
+        Permissions.ITEMS_WRITE,
         'audit.read',
       );
     } else if (roleName === 'waiter') {
@@ -185,6 +188,16 @@ export class AuthService {
       additionalPermissions.push(
         Permissions.ORDERS_READ,
         Permissions.ITEMS_WRITE,
+      );
+    } else if (roleName === 'cashier') {
+      additionalPermissions.push(
+        Permissions.PAYMENTS_READ,
+        Permissions.PAYMENTS_WRITE,
+        Permissions.ORDERS_READ,
+        Permissions.TABLES_READ,
+        Permissions.TABLES_WRITE,
+        Permissions.SESSIONS_READ,
+        Permissions.MENU_READ,
       );
     }
 

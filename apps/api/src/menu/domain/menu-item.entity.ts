@@ -6,6 +6,8 @@ export interface MenuItemProps {
   price: number;
   station: string;
   allergens: string[];
+  imageUrl?: string | null;
+  image_url?: string | null;
 }
 
 export class MenuItem {
@@ -16,6 +18,8 @@ export class MenuItem {
   readonly price: number;
   readonly station: string;
   readonly allergens: string[];
+  readonly imageUrl?: string | null;
+  readonly image_url?: string | null;
 
   constructor(props: MenuItemProps) {
     this.id = props.id;
@@ -25,5 +29,8 @@ export class MenuItem {
     this.price = props.price;
     this.station = props.station;
     this.allergens = props.allergens;
+    this.imageUrl = props.imageUrl ?? props.image_url ?? null;
+    this.image_url = props.image_url ?? props.imageUrl ?? null;
   }
 }
+

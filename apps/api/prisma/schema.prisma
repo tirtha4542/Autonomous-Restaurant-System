@@ -109,6 +109,7 @@ model menu_items {
   price             Decimal             @db.Decimal(10, 2)
   station           String              @db.VarChar(64)
   allergens         Json                @db.Json
+  image_url         String?             @db.VarChar(255)
   branches          branches            @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   order_items       order_items[]
   recipe_components recipe_components[]

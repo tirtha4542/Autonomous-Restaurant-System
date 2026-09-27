@@ -27,6 +27,12 @@ export class AuthController {
     return this.authService.listEmployees();
   }
 
+  @Public()
+  @Post('resolve-actor')
+  async resolveActor(@Body() body: { token: string }) {
+    return this.authService.resolveActor(body.token);
+  }
+
   @Get('me')
   async getMe(@Actor() actor: ActorContext) {
     return { actor };

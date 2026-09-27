@@ -142,4 +142,54 @@ export class OutboxService {
       },
     });
   }
+
+  /**
+   * Emit PaymentSettled event
+   */
+  async emitPaymentSettled(params: {
+    paymentId: number;
+    tableSessionId: number;
+    tableCode?: string;
+    amount: number;
+    method: string;
+    branchId: number;
+  }) {
+    return this.recordAndDispatch({
+      eventType: 'PaymentSettled',
+      aggregateType: 'Payment',
+      aggregateId: String(params.paymentId),
+      branchId: params.branchId,
+      payload: {
+        payment_id: params.paymentId,
+        table_session_id: params.tableSessionId,
+        table_code: params.tableCode,
+        amount: params.amount,
+        method: params.method,
+        status: 'settled',
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+
+  /**
+   * Emit SessionClosed event
+   */
+  async emitSessionClosed(params: {
+    tableSessionId: number;
+    tableCode?: string;
+    branchId: number;
+  }) {
+    return this.recordAndDispatch({
+      eventType: 'SessionClosed',
+      aggregateType: 'TableSession',
+      aggregateId: String(params.tableSessionId),
+      branchId: params.branchId,
+      payload: {
+        table_session_id: params.tableSessionId,
+        table_code: params.tableCode,
+        status: 'closed',
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
 }

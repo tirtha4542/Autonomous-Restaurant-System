@@ -184,7 +184,7 @@ class InternalClient:
             organization_id="org_dev",
             restaurant_id="rest_dev",
             branch_id="branch_dev",
-            permissions=["orders.read", "tables.read", "menu.read", "items.write", "reports.read"],
+            permissions=["orders.read", "tables.read", "menu.read", "items.write", "reports.read", "payments.read", "payments.write"],
             resource_scope={"tables": ["T1", "T2", "T5"]},
         )
 
@@ -219,6 +219,20 @@ class InternalClient:
                 "events": [
                     {"action": "order.created", "actor": "Customer T1", "timestamp": "Just now"},
                     {"action": "kitchen.item_started", "actor": "Priya Nair", "timestamp": "1m ago"},
+                ],
+            },
+            "get_table_bill": {
+                "table_code": args.get("table_id") or "T1",
+                "subtotal": 52.5,
+                "tax": 5.25,
+                "total": 57.75,
+                "paid_amount": 0.0,
+                "balance_due": 57.75,
+                "status": "UNPAID",
+                "items": [
+                    {"name": "Wagyu Burger", "quantity": 2, "price": 18.5, "line_total": 37.0},
+                    {"name": "Caesar Salad", "quantity": 1, "price": 8.5, "line_total": 8.5},
+                    {"name": "Craft IPA", "quantity": 1, "price": 7.0, "line_total": 7.0},
                 ],
             },
         }

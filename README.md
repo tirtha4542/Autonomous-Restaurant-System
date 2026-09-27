@@ -1,4 +1,4 @@
-﻿# Autonomous Restaurant System (Tavonza Platform)
+# Autonomous Restaurant System (Tavonza Platform)
 
 A full-stack, enterprise-grade Autonomous Restaurant Operating System featuring a NestJS core API, a multi-role operational portal, and an autonomous AI agent runtime (**JARVIS**) powered by Groq LLM and real-time Server-Sent Events (SSE).
 
@@ -96,6 +96,7 @@ python -m uvicorn apps.ai.main:app --app-dir . --port 8001 --host 127.0.0.1 --re
 | **Manager** | Username + Password | `manager` / `password123` | Full branch operations & audit |
 | **Waiter** | Username + Password | `waiter` / `password123` | Assigned tables (T1, T2, T3) |
 | **Kitchen** | Username + Password | `kitchen` / `password123` | KDS Stations & Tickets |
+| **Cashier** | Username + Password | `cashier` / `password123` | Billing, Register & Payments |
 
 ---
 
