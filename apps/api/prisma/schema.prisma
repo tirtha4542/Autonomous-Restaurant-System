@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model audit_logs {
+  id         Int       @id @default(autoincrement())
+  branch_id  Int?
+  actor_role String    @db.VarChar(64)
+  event_type String    @db.VarChar(128)
+  payload    Json      @db.Json
+  created_at DateTime  @db.Timestamp(6)
+  branches   branches? @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model branches {
+  id             Int              @id @default(autoincrement())
+  brand_id       Int
+  name           String           @db.VarChar(255)
+  timezone       String           @db.VarChar(64)
+  audit_logs     audit_logs[]
+  brands         brands           @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  departments    departments[]
+  dining_tables  dining_tables[]
+  inventory_skus inventory_skus[]
+  menu_items     menu_items[]
+  reservations   reservations[]
+  table_sessions table_sessions[]
+}
+
+model brands {
+  id              Int           @id @default(autoincrement())
+  organization_id Int
+  name            String        @db.VarChar(255)
+  branches        branches[]
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model departments {
+  id           Int         @id @default(autoincrement())
+  branch_id    Int
+  name         String      @db.VarChar(128)
+  station_type String      @db.VarChar(64)
+  branches     branches    @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  employees    employees[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model dining_tables {
+  id             Int              @id @default(autoincrement())
+  branch_id      Int
+  code           String           @db.VarChar(32)
+  qr_token       String           @unique @db.VarChar(128)
+  status         String           @db.VarChar(32)
+  capacity       Int
+  branches       branches         @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reservations   reservations[]
+  table_sessions table_sessions[]
+
+  @@unique([branch_id, code], map: "uq_branch_table_code")
+}
+
+model employees {
+  id            Int         @id @default(autoincrement())
+  department_id Int
+  role_id       Int
+  full_name     String      @db.VarChar(255)
+  departments   departments @relation(fields: [department_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  roles         roles       @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model guest_sessions {
+  id                  Int            @id @default(autoincrement())
+  table_session_id    Int
+  display_name        String         @db.VarChar(128)
+  phone               String?        @db.VarChar(32)
+  otp_verified        Boolean
+  status              String         @db.VarChar(32)
+  dietary_preferences Json           @db.Json
+  table_sessions      table_sessions @relation(fields: [table_session_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders              orders[]
+  payments            payments[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inventory_skus {
+  id                Int                 @id @default(autoincrement())
+  branch_id         Int
+  sku_code          String              @db.VarChar(64)
+  name              String              @db.VarChar(255)
+  on_hand           Decimal             @db.Decimal(12, 3)
+  par_level         Decimal             @db.Decimal(12, 3)
+  unit              String              @db.VarChar(32)
+  branches          branches            @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  recipe_components recipe_components[]
+
+  @@unique([branch_id, sku_code], map: "uq_branch_sku")
+}
+
+model menu_items {
+  id                Int                 @id @default(autoincrement())
+  branch_id         Int
+  name              String              @db.VarChar(255)
+  description       String
+  price             Decimal             @db.Decimal(10, 2)
+  station           String              @db.VarChar(64)
+  allergens         Json                @db.Json
+  branches          branches            @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  order_items       order_items[]
+  recipe_components recipe_components[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model order_items {
+  id           Int        @id @default(autoincrement())
+  order_id     Int
+  menu_item_id Int
+  quantity     Int
+  modifiers    Json       @db.Json
+  status       String     @db.VarChar(32)
+  station      String     @db.VarChar(64)
+  menu_items   menu_items @relation(fields: [menu_item_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders       orders     @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model orders {
+  id               Int             @id @default(autoincrement())
+  table_session_id Int
+  guest_session_id Int?
+  is_shared        Boolean
+  status           String          @db.VarChar(32)
+  order_items      order_items[]
+  guest_sessions   guest_sessions? @relation(fields: [guest_session_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  table_sessions   table_sessions  @relation(fields: [table_session_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payments         payments[]
+}
+
+model organizations {
+  id     Int      @id @default(autoincrement())
+  name   String   @db.VarChar(255)
+  brands brands[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model payments {
+  id               Int             @id @default(autoincrement())
+  order_id         Int
+  guest_session_id Int?
+  amount           Decimal         @db.Decimal(10, 2)
+  status           String          @db.VarChar(32)
+  method           String          @db.VarChar(32)
+  guest_sessions   guest_sessions? @relation(fields: [guest_session_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orders           orders          @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model recipe_components {
+  id             Int            @id @default(autoincrement())
+  menu_item_id   Int
+  sku_id         Int
+  quantity       Decimal        @db.Decimal(12, 3)
+  menu_items     menu_items     @relation(fields: [menu_item_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  inventory_skus inventory_skus @relation(fields: [sku_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([menu_item_id, sku_id], map: "uq_recipe_menu_sku")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model reservations {
+  id            Int            @id @default(autoincrement())
+  branch_id     Int
+  table_id      Int?
+  guest_name    String         @db.VarChar(255)
+  party_size    Int
+  status        String         @db.VarChar(32)
+  start_at      DateTime       @db.Timestamp(6)
+  branches      branches       @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  dining_tables dining_tables? @relation(fields: [table_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model roles {
+  id          Int         @id @default(autoincrement())
+  name        String      @unique @db.VarChar(64)
+  permissions Json        @db.Json
+  employees   employees[]
+}
+
+model table_sessions {
+  id             Int              @id @default(autoincrement())
+  table_id       Int
+  branch_id      Int
+  status         String           @db.VarChar(32)
+  opened_at      DateTime         @db.Timestamp(6)
+  closed_at      DateTime?        @db.Timestamp(6)
+  guest_sessions guest_sessions[]
+  orders         orders[]
+  branches       branches         @relation(fields: [branch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  dining_tables  dining_tables    @relation(fields: [table_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}

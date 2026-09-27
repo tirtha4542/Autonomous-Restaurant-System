@@ -1,0 +1,41 @@
+# apps/ai — Python dependencies
+#
+# Intentionally absent:
+#   - a database driver (AI must never access PostgreSQL directly — RULES.md #7)
+#   - an agent-orchestration framework (LangGraph or similar) — this project
+#     uses a small hand-rolled capped loop (agents/jarvis_agent.py). Swapping
+#     in a framework later is an architecturally significant choice and
+#     belongs in an ADR first (RULES.md #21, #23).
+
+# ---- Service framework ----
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+
+# ---- Config & validation ----
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+
+# ---- Calling the backend (never the DB directly) ----
+httpx==0.27.2
+tenacity==9.0.0
+
+# ---- Model provider: Groq (kept isolated behind providers/) ----
+groq==0.11.0
+
+# ---- Cache / conversation state (ElastiCache Redis/Valkey in production) ----
+redis==5.0.8
+
+# ---- Structured observability ----
+structlog==24.4.0
+
+# ---- Testing ----
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-mock==3.14.0
+respx==0.21.1
+
+# ---- Lint / type-check ----
+ruff==0.6.9
+mypy==1.11.2
+pydantic-core

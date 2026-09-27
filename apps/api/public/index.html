@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tavonza — Multi-Role Restaurant Operations & Guest Experience</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Global App Header -->
+  <header class="app-header">
+    <div class="brand">
+      <div class="logo-mark">T</div>
+      <div>
+        <h1 class="brand-title">Tavonza</h1>
+        <p class="brand-sub">Autonomous Restaurant System</p>
+      </div>
+    </div>
+
+    <!-- Multi-Portal Navigation -->
+    <nav class="nav-modes" aria-label="Portal Selection">
+      <button id="portal-btn-customer" class="mode-btn active" onclick="switchPortal('customer')">
+        <span class="icon">📱</span> Customer Portal
+      </button>
+      <button id="portal-btn-manager" class="mode-btn" onclick="switchPortal('manager')">
+        <span class="icon">👔</span> Manager Portal
+      </button>
+      <button id="portal-btn-waiter" class="mode-btn" onclick="switchPortal('waiter')">
+        <span class="icon">🍽️</span> Waiter Portal
+      </button>
+      <button id="portal-btn-kitchen" class="mode-btn" onclick="switchPortal('kitchen')">
+        <span class="icon">👨‍🍳</span> Kitchen (KDS)
+      </button>
+    </nav>
+
+    <div class="header-right">
+      <div id="connection-pill" class="status-pill offline" title="Live Outbox SSE Stream">
+        <span class="pulse-dot"></span>
+        <span id="connection-text">Connecting SSE...</span>
+      </div>
+      <button id="btn-open-jarvis" class="jarvis-trigger" onclick="toggleJarvisModal()">
+        <span class="ai-sparkle">✨</span> <span id="jarvis-btn-label">Ask JARVIS</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-container">
+
+    <!-- ======================================================== -->
+    <!-- 1. CUSTOMER PORTAL (QR SCAN ACCESS ONLY - NO PASSWORD)   -->
+    <!-- ======================================================== -->
+    <section id="view-customer" class="portal-view active">
+      <div class="portal-banner customer-banner">
+        <div class="banner-content">
+          <span class="badge badge-accent">📱 Customer Portal</span>
+          <h2>Table Guest Experience</h2>
+          <p class="subtext">Scan your Table QR code to order directly from your mobile device. <strong>No username or password required.</strong></p>
+        </div>
+      </div>
+
+      <div class="customer-layout">
+        <!-- Left: Table Session & Menu -->
+        <div class="customer-main">
+          <!-- Table Bar & QR Selector -->
+          <div class="table-bar card">
+            <div class="table-info">
+              <span class="badge badge-success">QR Verified</span>
+              <h2 id="cust-table-heading" class="table-heading">Table T1 (QR Code)</h2>
+              <span id="cust-session-label" class="subtext">Session #--</span>
+            </div>
+            <div class="table-selector">
+              <label for="cust-table-select">Select / Scan Table QR:</label>
+              <select id="cust-table-select" onchange="onCustomerTableChange(this.value)">
+                <!-- Populated via API -->
+                <option value="qr_abapDInnG4bJWLlyo13Kvx6s9cW1iiBP">Table T1 (qr_abapDInnG4...)</option>
+                <option value="qr_2DB01YsBsvvtK40asPsfIoYdUGF4zqSf">Table T2 (qr_2DB01YsB...)</option>
+                <option value="qr_aqNTkvK9tDJxa2QOXEfeFJYuYajW7Nr2">Table T3 (qr_aqNTkvK9...)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Customer Identity Form -->
+          <div class="customer-session-bar card">
+            <div class="guest-inputs">
+              <div>
+                <label for="cust-name">Guest Name:</label>
+                <input type="text" id="cust-name" value="Alex Smith" placeholder="Name">
+              </div>
+              <div>
+                <label for="cust-phone">Phone (Optional):</label>
+                <input type="text" id="cust-phone" value="+1 (555) 019-2831" placeholder="Phone">
+              </div>
+              <button class="btn btn-secondary" onclick="updateCustomerSession()">Refresh Table Token</button>
+            </div>
+            <div id="cust-token-status" class="token-status">
+              <span class="badge badge-success">JWT Active: USER</span>
+              <span class="subtext">Scope: Table T1</span>
+            </div>
+          </div>
+
+          <!-- Menu Section -->
+          <div class="menu-section">
+            <div class="section-header">
+              <div>
+                <h2>Digital Menu</h2>
+                <p class="subtext">Select dishes to add to your table's order</p>
+              </div>
+              <div class="station-filters">
+                <button class="filter-pill active" onclick="filterCustomerMenu('all')">All</button>
+                <button class="filter-pill" onclick="filterCustomerMenu('grill')">Grill</button>
+                <button class="filter-pill" onclick="filterCustomerMenu('cold')">Cold</button>
+                <button class="filter-pill" onclick="filterCustomerMenu('fryer')">Fryer</button>
+                <button class="filter-pill" onclick="filterCustomerMenu('coffee')">Coffee</button>
+                <button class="filter-pill" onclick="filterCustomerMenu('bar')">Bar</button>
+              </div>
+            </div>
+            <div id="menu-grid" class="menu-grid">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Cart & Active Table Orders -->
+        <div class="customer-side">
+          <!-- Cart Card -->
+          <div class="cart-card card">
+            <div class="card-header">
+              <h3>Table Cart</h3>
+              <span class="badge badge-neutral" id="cart-count">0 items</span>
+            </div>
+            <div id="cart-items" class="cart-items">
+              <p class="empty-state">Your cart is empty. Tap items on the menu to add.</p>
+            </div>
+            <div class="cart-footer">
+              <div class="cart-subtotal">
+                <span>Estimated Total:</span>
+                <strong id="cart-total">$0.00</strong>
+              </div>
+              <button id="btn-submit-order" class="btn btn-primary btn-block" onclick="submitCustomerOrder()">
+                Place Order to Kitchen
+              </button>
+            </div>
+          </div>
+
+          <!-- Active Table Orders Tracker -->
+          <div class="orders-tracker-card card">
+            <div class="card-header">
+              <h3>Live Table Orders</h3>
+              <span class="badge badge-accent">Auto-updates via SSE</span>
+            </div>
+            <div id="customer-orders-list" class="orders-list">
+              <p class="empty-state">No orders placed yet for this table session.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ======================================================== -->
+    <!-- 2. MANAGER PORTAL (USERNAME + PASSWORD LOGIN)            -->
+    <!-- ======================================================== -->
+    <section id="view-manager" class="portal-view">
+      <!-- Manager Login Screen -->
+      <div id="manager-login-screen" class="login-screen">
+        <div class="login-card card">
+          <div class="login-icon">👔</div>
+          <h2>Manager Portal Login</h2>
+          <p class="subtext">Enter your manager credentials to access branch controls and executive reports.</p>
+
+          <form id="manager-login-form" onsubmit="handleManagerLogin(event)">
+            <div class="form-group">
+              <label for="mgr-username">Username:</label>
+              <input type="text" id="mgr-username" value="manager" required autocomplete="username">
+            </div>
+            <div class="form-group">
+              <label for="mgr-password">Password:</label>
+              <input type="password" id="mgr-password" value="password123" required autocomplete="current-password">
+            </div>
+            <div id="mgr-login-error" class="login-error-msg" style="display: none;"></div>
+            <button type="submit" class="btn btn-primary btn-block">Sign In as Manager</button>
+          </form>
+
+          <div class="demo-quick-auth">
+            <span class="subtext">Quick Fill Demo:</span>
+            <button class="btn btn-outline btn-sm" onclick="quickFillLogin('manager', 'manager', 'password123')">
+              Default: <code>manager</code> / <code>password123</code> (Sofia Alvarez)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Manager Dashboard Screen -->
+      <div id="manager-dashboard" class="role-dashboard" style="display: none;">
+        <div class="role-header-bar card">
+          <div class="role-user-info">
+            <span class="badge badge-manager">Executive Access</span>
+            <h2 id="mgr-user-label">Sofia Alvarez • General Manager</h2>
+            <span class="subtext">Branch: HQ (Branch #8) • Actor: USER #1 • Full Access + AI Executive Tools</span>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="logoutStaff('manager')">Log Out</button>
+        </div>
+
+        <!-- KPI Cards Grid -->
+        <div class="kpi-grid">
+          <div class="kpi-card card">
+            <span class="kpi-title">Active Tables</span>
+            <span id="mgr-kpi-tables" class="kpi-value">--</span>
+            <span class="kpi-sub" id="mgr-kpi-tables-sub">Loading live status...</span>
+          </div>
+          <div class="kpi-card card">
+            <span class="kpi-title">Open Orders</span>
+            <span id="mgr-kpi-orders" class="kpi-value">--</span>
+            <span class="kpi-sub">Across all floor stations</span>
+          </div>
+          <div class="kpi-card card">
+            <span class="kpi-title">Kitchen Backlog</span>
+            <span id="mgr-kpi-kitchen" class="kpi-value">--</span>
+            <span class="kpi-sub">Items awaiting prep / ready</span>
+          </div>
+          <div class="kpi-card card">
+            <span class="kpi-title">Audit Logs Persisted</span>
+            <span id="mgr-kpi-audit" class="kpi-value">--</span>
+            <span class="kpi-sub">Outbox events recorded</span>
+          </div>
+        </div>
+
+        <div class="manager-grid-layout">
+          <!-- Floor Tables Overview -->
+          <div class="card manager-section">
+            <div class="card-header">
+              <h3>Dining Room Floor Map</h3>
+              <button class="btn btn-sm btn-secondary" onclick="loadManagerData()">Refresh</button>
+            </div>
+            <div id="mgr-tables-grid" class="tables-map-grid">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- All Orders Control -->
+          <div class="card manager-section">
+            <div class="card-header">
+              <h3>All Branch Orders</h3>
+              <span class="badge badge-accent" id="mgr-orders-count">0 orders</span>
+            </div>
+            <div id="mgr-orders-list" class="orders-list">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- Realtime Audit Log -->
+          <div class="card manager-section manager-full-span">
+            <div class="card-header">
+              <h3>Live System Audit & Outbox Stream</h3>
+              <span class="badge badge-success">PostgreSQL audit_logs</span>
+            </div>
+            <div id="mgr-audit-list" class="audit-log-list">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ======================================================== -->
+    <!-- 3. WAITER PORTAL (USERNAME + PASSWORD LOGIN)             -->
+    <!-- ======================================================== -->
+    <section id="view-waiter" class="portal-view">
+      <!-- Waiter Login Screen -->
+      <div id="waiter-login-screen" class="login-screen">
+        <div class="login-card card">
+          <div class="login-icon">🍽️</div>
+          <h2>Waiter Portal Login</h2>
+          <p class="subtext">Enter your waiter credentials to manage assigned tables and floor orders.</p>
+
+          <form id="waiter-login-form" onsubmit="handleWaiterLogin(event)">
+            <div class="form-group">
+              <label for="wtr-username">Username:</label>
+              <input type="text" id="wtr-username" value="waiter" required autocomplete="username">
+            </div>
+            <div class="form-group">
+              <label for="wtr-password">Password:</label>
+              <input type="password" id="wtr-password" value="password123" required autocomplete="current-password">
+            </div>
+            <div id="wtr-login-error" class="login-error-msg" style="display: none;"></div>
+            <button type="submit" class="btn btn-primary btn-block">Sign In as Waiter</button>
+          </form>
+
+          <div class="demo-quick-auth">
+            <span class="subtext">Quick Fill Demo:</span>
+            <button class="btn btn-outline btn-sm" onclick="quickFillLogin('waiter', 'waiter', 'password123')">
+              Default: <code>waiter</code> / <code>password123</code> (Asha Mehta)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Waiter Dashboard Screen -->
+      <div id="waiter-dashboard" class="role-dashboard" style="display: none;">
+        <div class="role-header-bar card">
+          <div class="role-user-info">
+            <span class="badge badge-accent">Floor Service</span>
+            <h2 id="wtr-user-label">Asha Mehta • Floor Waiter</h2>
+            <span class="subtext">Assigned Scope: Tables T1, T2, T3 • Permissions: orders.read, orders.write, tables.write</span>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="logoutStaff('waiter')">Log Out</button>
+        </div>
+
+        <div class="waiter-layout">
+          <!-- Left: Assigned Tables Status -->
+          <div class="card waiter-tables-card">
+            <div class="card-header">
+              <h3>My Assigned Tables</h3>
+              <span class="badge badge-success">3 Tables</span>
+            </div>
+            <div id="wtr-tables-list" class="waiter-tables-grid">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- Right: Floor Orders & Serve Actions -->
+          <div class="card waiter-orders-card">
+            <div class="card-header">
+              <h3>Active Floor Orders</h3>
+              <span class="badge badge-accent">Realtime Kitchen Updates</span>
+            </div>
+            <div id="wtr-orders-list" class="orders-list">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ======================================================== -->
+    <!-- 4. KITCHEN PORTAL (KDS) (USERNAME + PASSWORD LOGIN)       -->
+    <!-- ======================================================== -->
+    <section id="view-kitchen" class="portal-view">
+      <!-- Kitchen Login Screen -->
+      <div id="kitchen-login-screen" class="login-screen">
+        <div class="login-card card">
+          <div class="login-icon">👨‍🍳</div>
+          <h2>Kitchen Display System (KDS)</h2>
+          <p class="subtext">Enter your chef / line cook credentials to access the live preparation tickets.</p>
+
+          <form id="kitchen-login-form" onsubmit="handleKitchenLogin(event)">
+            <div class="form-group">
+              <label for="ktc-username">Username:</label>
+              <input type="text" id="ktc-username" value="kitchen" required autocomplete="username">
+            </div>
+            <div class="form-group">
+              <label for="ktc-password">Password:</label>
+              <input type="password" id="ktc-password" value="password123" required autocomplete="current-password">
+            </div>
+            <div id="ktc-login-error" class="login-error-msg" style="display: none;"></div>
+            <button type="submit" class="btn btn-primary btn-block">Sign In to KDS</button>
+          </form>
+
+          <div class="demo-quick-auth">
+            <span class="subtext">Quick Fill Demo:</span>
+            <button class="btn btn-outline btn-sm" onclick="quickFillLogin('kitchen', 'kitchen', 'password123')">
+              Default: <code>kitchen</code> / <code>password123</code> (Priya Nair)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kitchen Dashboard Screen -->
+      <div id="kitchen-dashboard" class="role-dashboard" style="display: none;">
+        <div class="role-header-bar card">
+          <div class="role-user-info">
+            <span class="badge badge-warning">Kitchen Line Cook</span>
+            <h2 id="ktc-user-label">Priya Nair • Kitchen Department</h2>
+            <span class="subtext">Station: All Cooking Lines • Permissions: items.write, orders.read</span>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="logoutStaff('kitchen')">Log Out</button>
+        </div>
+
+        <div class="kds-filter-bar card">
+          <span class="subtext">Select Prep Station:</span>
+          <div class="station-filters">
+            <button class="filter-pill active" onclick="filterKitchenKds('all')">ALL STATIONS</button>
+            <button class="filter-pill" onclick="filterKitchenKds('grill')">GRILL</button>
+            <button class="filter-pill" onclick="filterKitchenKds('cold')">COLD</button>
+            <button class="filter-pill" onclick="filterKitchenKds('fryer')">FRYER</button>
+            <button class="filter-pill" onclick="filterKitchenKds('coffee')">COFFEE</button>
+            <button class="filter-pill" onclick="filterKitchenKds('bar')">BAR</button>
+          </div>
+        </div>
+
+        <div class="kds-container">
+          <div class="section-header">
+            <h3>Live Preparation Queue</h3>
+            <span class="badge badge-accent" id="kds-ticket-count">0 tickets pending</span>
+          </div>
+          <div id="kitchen-tickets-grid" class="kds-tickets-grid">
+            <!-- Rendered via JS -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- "Ask JARVIS" AI Modal (Scoped by Active Portal Role)      -->
+  <!-- ======================================================== -->
+  <div id="jarvis-modal" class="modal-backdrop" onclick="onModalBackdropClick(event)">
+    <div class="modal-content card" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="jarvis-identity">
+          <div class="jarvis-avatar">🤖</div>
+          <div>
+            <h3 id="jarvis-role-title">JARVIS Restaurant AI</h3>
+            <p id="jarvis-role-subtitle" class="subtext">Powered by Groq Free Model (openai/gpt-oss-120b)</p>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <button class="btn btn-outline btn-sm" onclick="clearCurrentRoleChat()" title="Start fresh conversation for this role">✨ New Chat</button>
+          <button class="btn-close" onclick="toggleJarvisModal()">&times;</button>
+        </div>
+      </div>
+
+      <div class="jarvis-active-actor-bar">
+        <span class="subtext">Active Authorization Token:</span>
+        <strong id="jarvis-actor-badge">Customer (Table T1)</strong>
+        <span class="subtext">• Allowed Tools:</span>
+        <code id="jarvis-tools-badge">get_menu, get_order_status</code>
+      </div>
+
+      <!-- Quick prompts scoped to role -->
+      <div id="jarvis-quick-prompts" class="quick-prompts-bar">
+        <!-- Injected via JS based on active role -->
+      </div>
+
+      <!-- Chat History -->
+      <div id="jarvis-messages" class="chat-messages">
+        <div class="chat-msg jarvis-msg">
+          <div class="msg-avatar">🤖</div>
+          <div class="msg-body" id="jarvis-welcome-msg">
+            Hello! I am JARVIS. How may I assist you with your table today?
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Input -->
+      <div class="chat-input-bar">
+        <input 
+          type="text" 
+          id="jarvis-input" 
+          placeholder="Ask JARVIS something based on your role..." 
+          onkeydown="onJarvisInputKey(event)"
+        >
+        <button class="btn btn-primary" onclick="sendJarvisMessage()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
