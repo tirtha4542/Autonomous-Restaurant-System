@@ -13,7 +13,7 @@ async def build_context(client: InternalClient, actor: ActorContext) -> str:
     scope = actor.resource_scope or {}
     table_code = scope.get("table_code")
     
-    # If actor is a customer seated at a specific table
+    # 1. If actor is a customer seated at a specific table
     if table_code:
         session_id = scope.get("table_session_id", "active")
         return (
@@ -22,8 +22,39 @@ async def build_context(client: InternalClient, actor: ActorContext) -> str:
             f"Never show, disclose, or discuss orders from other tables (like Table 1 or Table 2)."
         )
 
-    # Staff / manager context
+    # 2. Kitchen Line Cook / Chef context
+    if "items.write" in actor.permissions and "reports.read" not in actor.permissions:
+        station = scope.get("station", "all stations")
+        return (
+            f"You are speaking with Kitchen Staff / Chef (Station: {station}). "
+            "You are responsible for food preparation tickets, cooking stations, and the kitchen queue. "
+            "You do NOT manage dining room tables, seating, or customer service."
+        )
+
+    # 3. Floor Waiter context
+    if "orders.serve" in actor.permissions and "reports.read" not in actor.permissions:
+        raw = await client.get_context_bootstrap(actor)
+        tables = raw.get("assigned_tables", [])
+        sessions = raw.get("active_sessions", [])
+        return (
+            f"You are speaking with a Floor Waiter. "
+            f"Assigned floor tables: {tables}. Active dining sessions: {len(sessions)}. "
+            "Focus on dining room table monitoring, guest ordering, and serving ready dishes."
+        )
+
+    # 4. Executive Manager context
+    if "reports.read" in actor.permissions:
+        raw = await client.get_context_bootstrap(actor)
+        tables = raw.get("assigned_tables", [])
+        sessions = raw.get("active_sessions", [])
+        return (
+            f"You are speaking with the General Manager. "
+            f"Branch tables: {tables}. Active dining sessions: {len(sessions)}. "
+            "Full operational oversight over branch KPIs, audit event logs, kitchen throughput, and floor occupancy."
+        )
+
+    # Default fallback
     raw = await client.get_context_bootstrap(actor)
     tables = raw.get("assigned_tables", [])
     sessions = raw.get("active_sessions", [])
-    return f"Staff operational context. Assigned tables: {tables}. Active table sessions: {len(sessions)}."
+    return f"Staff operational context. Tables: {tables}. Active sessions: {len(sessions)}."

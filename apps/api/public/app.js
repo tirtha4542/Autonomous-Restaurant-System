@@ -153,16 +153,19 @@ function switchPortal(portal) {
   renderJarvisChatHistory();
 }
 
-function quickFillLogin(portal, username, password) {
+async function quickFillLogin(portal, username, password) {
   if (portal === 'manager') {
     document.getElementById('mgr-username').value = username;
     document.getElementById('mgr-password').value = password;
+    await handleManagerLogin();
   } else if (portal === 'waiter') {
     document.getElementById('wtr-username').value = username;
     document.getElementById('wtr-password').value = password;
+    await handleWaiterLogin();
   } else if (portal === 'kitchen') {
     document.getElementById('ktc-username').value = username;
     document.getElementById('ktc-password').value = password;
+    await handleKitchenLogin();
   }
 }
 
@@ -534,12 +537,14 @@ async function refreshCustomerOrders() {
 // 2. MANAGER PORTAL LOGIC (USERNAME + PASSWORD LOGIN)
 // ============================================================
 async function handleManagerLogin(event) {
-  event.preventDefault();
+  if (event && event.preventDefault) event.preventDefault();
   const username = document.getElementById('mgr-username').value.trim();
   const password = document.getElementById('mgr-password').value.trim();
   const errorEl = document.getElementById('mgr-login-error');
+  const btn = document.querySelector('#manager-login-form button[type="submit"]');
 
   errorEl.style.display = 'none';
+  if (btn) btn.textContent = 'Signing in...';
 
   try {
     const res = await fetch(`${API_BASE}/auth/login`, {
@@ -549,7 +554,7 @@ async function handleManagerLogin(event) {
     });
 
     if (!res.ok) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({}));
       throw new Error(err.message || 'Invalid username or password');
     }
 
@@ -564,8 +569,13 @@ async function handleManagerLogin(event) {
     await loadManagerData();
     updateJarvisContext();
   } catch (err) {
-    errorEl.textContent = err.message;
+    console.error('Manager login error:', err);
+    errorEl.textContent = err.message.includes('fetch') 
+      ? 'Cannot connect to backend server. Make sure apps/api is running on port 3000.' 
+      : err.message;
     errorEl.style.display = 'block';
+  } finally {
+    if (btn) btn.textContent = 'Sign In as Manager';
   }
 }
 
@@ -746,12 +756,14 @@ async function closeTableSession(sessionId) {
 // 3. WAITER PORTAL LOGIC (USERNAME + PASSWORD LOGIN)
 // ============================================================
 async function handleWaiterLogin(event) {
-  event.preventDefault();
+  if (event && event.preventDefault) event.preventDefault();
   const username = document.getElementById('wtr-username').value.trim();
   const password = document.getElementById('wtr-password').value.trim();
   const errorEl = document.getElementById('wtr-login-error');
+  const btn = document.querySelector('#waiter-login-form button[type="submit"]');
 
   errorEl.style.display = 'none';
+  if (btn) btn.textContent = 'Signing in...';
 
   try {
     const res = await fetch(`${API_BASE}/auth/login`, {
@@ -761,7 +773,7 @@ async function handleWaiterLogin(event) {
     });
 
     if (!res.ok) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({}));
       throw new Error(err.message || 'Invalid username or password');
     }
 
@@ -776,8 +788,13 @@ async function handleWaiterLogin(event) {
     await loadWaiterData();
     updateJarvisContext();
   } catch (err) {
-    errorEl.textContent = err.message;
+    console.error('Waiter login error:', err);
+    errorEl.textContent = err.message.includes('fetch') 
+      ? 'Cannot connect to backend server. Make sure apps/api is running on port 3000.' 
+      : err.message;
     errorEl.style.display = 'block';
+  } finally {
+    if (btn) btn.textContent = 'Sign In as Waiter';
   }
 }
 
@@ -861,12 +878,14 @@ async function serveWaiterOrder(orderId) {
 // 4. KITCHEN PORTAL LOGIC (USERNAME + PASSWORD LOGIN)
 // ============================================================
 async function handleKitchenLogin(event) {
-  event.preventDefault();
+  if (event && event.preventDefault) event.preventDefault();
   const username = document.getElementById('ktc-username').value.trim();
   const password = document.getElementById('ktc-password').value.trim();
   const errorEl = document.getElementById('ktc-login-error');
+  const btn = document.querySelector('#kitchen-login-form button[type="submit"]');
 
   errorEl.style.display = 'none';
+  if (btn) btn.textContent = 'Signing in...';
 
   try {
     const res = await fetch(`${API_BASE}/auth/login`, {
@@ -876,7 +895,7 @@ async function handleKitchenLogin(event) {
     });
 
     if (!res.ok) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({}));
       throw new Error(err.message || 'Invalid username or password');
     }
 
@@ -891,8 +910,13 @@ async function handleKitchenLogin(event) {
     await loadKitchenQueue();
     updateJarvisContext();
   } catch (err) {
-    errorEl.textContent = err.message;
+    console.error('Kitchen login error:', err);
+    errorEl.textContent = err.message.includes('fetch') 
+      ? 'Cannot connect to backend server. Make sure apps/api is running on port 3000.' 
+      : err.message;
     errorEl.style.display = 'block';
+  } finally {
+    if (btn) btn.textContent = 'Sign In to KDS';
   }
 }
 
