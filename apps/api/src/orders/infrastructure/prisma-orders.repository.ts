@@ -125,6 +125,8 @@ export class PrismaOrdersRepository implements IOrderRepository {
       station: oi.station,
       modifiers: oi.modifiers,
       status: oi.status,
+      imageUrl: oi.menu_items?.image_url,
+      image_url: oi.menu_items?.image_url,
     }));
 
     return new Order({

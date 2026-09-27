@@ -28,6 +28,21 @@ export class MenuController {
   }
 
   @Public()
+  @Get('items')
+  async getMenuItems(
+    @Query('branch_id') queryBranchId?: string,
+    @Actor() actor?: ActorContext,
+  ) {
+    const branchId = actor?.branch_id
+      ? Number(actor.branch_id)
+      : queryBranchId
+        ? Number(queryBranchId)
+        : 8;
+
+    return this.menuService.getMenuForBranch(branchId);
+  }
+
+  @Public()
   @Get(':id')
   async getMenuItem(
     @Param('id', ParseIntPipe) id: number,

@@ -4,7 +4,9 @@ export type OutboxEventType =
   | 'OrderRejected'
   | 'OrderItemReady'
   | 'OrderReady'
-  | 'OrderServed';
+  | 'OrderServed'
+  | 'PaymentSettled'
+  | 'SessionClosed';
 
 export interface OutboxEvent<T = Record<string, any>> {
   id: string;

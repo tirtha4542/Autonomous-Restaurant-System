@@ -89,6 +89,7 @@ export class InternalService {
           category: item.station,
           station: item.station,
           allergens: item.allergens,
+          image_url: item.image_url,
         }));
 
         return {
@@ -303,6 +304,90 @@ export class InternalService {
               payload: log.payload,
               time: log.created_at,
             })),
+          },
+        };
+      }
+
+      case 'get_table_bill': {
+        const tableIdentifier = String(args.table_id || args.code || '');
+        const table = await this.prisma.dining_tables.findFirst({
+          where: {
+            branch_id: branchId,
+            OR: [
+              { code: tableIdentifier },
+              ...(isNaN(Number(tableIdentifier)) ? [] : [{ id: Number(tableIdentifier) }]),
+            ],
+          },
+          include: {
+            table_sessions: {
+              where: { closed_at: null },
+              include: {
+                orders: {
+                  include: {
+                    order_items: {
+                      include: {
+                        menu_items: true,
+                      },
+                    },
+                    payments: true,
+                  },
+                },
+              },
+              take: 1,
+            },
+          },
+        });
+
+        if (!table || table.table_sessions.length === 0) {
+          return {
+            ok: false,
+            error: `No active dining session found for table '${tableIdentifier}'`,
+          };
+        }
+
+        const session = table.table_sessions[0];
+        let subtotal = 0;
+        let totalPaid = 0;
+        const items: Array<{ name: string; quantity: number; price: number; line_total: number }> = [];
+
+        for (const order of session.orders) {
+          for (const oi of order.order_items) {
+            const unitPrice = Number(oi.menu_items?.price || 0);
+            const lineTotal = Number((unitPrice * oi.quantity).toFixed(2));
+            subtotal += lineTotal;
+            items.push({
+              name: oi.menu_items?.name || 'Item',
+              quantity: oi.quantity,
+              price: unitPrice,
+              line_total: lineTotal,
+            });
+          }
+          for (const p of order.payments) {
+            if (p.status === 'settled') {
+              totalPaid += Number(p.amount);
+            }
+          }
+        }
+
+        subtotal = Number(subtotal.toFixed(2));
+        const tax = Number((subtotal * 0.1).toFixed(2));
+        const total = Number((subtotal + tax).toFixed(2));
+        totalPaid = Number(totalPaid.toFixed(2));
+        const balanceDue = Math.max(0, Number((total - totalPaid).toFixed(2)));
+
+        return {
+          ok: true,
+          data: {
+            table_code: table.code,
+            session_id: session.id,
+            items_count: items.length,
+            items,
+            subtotal,
+            tax,
+            total,
+            paid_amount: totalPaid,
+            balance_due: balanceDue,
+            status: totalPaid >= total && total > 0 ? 'SETTLED' : totalPaid > 0 ? 'PARTIAL' : 'UNPAID',
           },
         };
       }

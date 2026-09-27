@@ -42,7 +42,19 @@ async def build_context(client: InternalClient, actor: ActorContext) -> str:
             "Focus on dining room table monitoring, guest ordering, and serving ready dishes."
         )
 
-    # 4. Executive Manager context
+    # 4. Cashier context
+    if "payments.write" in actor.permissions and "reports.read" not in actor.permissions:
+        raw = await client.get_context_bootstrap(actor)
+        tables = raw.get("assigned_tables", [])
+        sessions = raw.get("active_sessions", [])
+        return (
+            f"You are speaking with the Branch Cashier (Station: Checkout / Counter). "
+            f"Active dining table sessions: {len(sessions)}. Tables: {tables}. "
+            "You assist with checking table bills, order subtotals, tax, payment statuses, receipt breakdowns, and bill settlements. "
+            "You do NOT manage cooking in the kitchen or take orders on the floor."
+        )
+
+    # 5. Executive Manager context
     if "reports.read" in actor.permissions:
         raw = await client.get_context_bootstrap(actor)
         tables = raw.get("assigned_tables", [])

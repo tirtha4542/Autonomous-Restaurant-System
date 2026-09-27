@@ -12,6 +12,7 @@ import { OrdersModule } from './orders/orders.module';
 import { KitchenModule } from './kitchen/kitchen.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { OutboxModule } from './outbox/outbox.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { OutboxModule } from './outbox/outbox.module';
     TableSessionsModule,
     OrdersModule,
     KitchenModule,
+    PaymentsModule,
   ],
   providers: [
     {
